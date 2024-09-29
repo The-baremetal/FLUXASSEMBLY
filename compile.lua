@@ -17,7 +17,7 @@ local function writeFile(filePath, content)
     file:close()
 end
 
-local sections = {}
+local sections = { text = {}, data = {} }
 
 local function addSection(sectionName)
     if not sections[sectionName] then
@@ -146,17 +146,14 @@ end
 
 local function generateOrigin(mode, origin)
     return string.format([[ 
-[BITS %d]  
-[ORG 0x%X]                   
+    BITS %d
+    org 0x%X                  
 ]], mode, origin)
 end
 
 local function generateCode(input)
     local code = {}
     local signatureCode = ""
-
-    addSection("text")
-    addSection("data")
 
     addToSection("text", [[ 
 global _start 
@@ -193,7 +190,13 @@ section .data
 
     local pubPattern = "pub%s+function%s+(%w+)%s*%(([^)]+)%)%s*(.-)end"
     for funcName, args, body in input:gmatch(pubPattern) do
-        addToSection("text", generatePubFunction(funcName, body))
+        local attributeCode = ""
+        if input:match("function%s*%(" .. funcName .. "%s*,%s*\"([^\"]+)\"%)") then
+            local attribute = input:match("function%s*%(" .. funcName .. "%s*,%s*\"([^\"]+)\"%)")
+            attributeCode = string.format("    ; Attribute: %s\n", attribute)
+        end
+        local funcBody = string.format("%s%s", attributeCode, body)
+        addToSection("text", generatePubFunction(funcName, funcBody))
     end
 
     local concatPattern = "local%s+(%w+)%s*=%s*\"(.-)\"%s*..%s*\"(.-)\""
@@ -240,14 +243,17 @@ section .data
 
     if input:match("signature%s*%((%w+)%s*,%s*(%d+)%)") then
         local signature, size = input:match("signature%s*%((%w+)%s*,%s*(%d+)%)")
-        addToSection("text", generateSignature(signature, size))
+        signatureCode = generateSignature(signature, size)
     end
 
-    for _, section in pairs(sections) do
-        code[#code + 1] = table.concat(section, "\n")
+    for sectionName, codeList in pairs(sections) do
+        code[#code + 1] = string.format("section .%s\n", sectionName)
+        for _, codeLine in ipairs(codeList) do
+            code[#code + 1] = codeLine
+        end
     end
 
-    return table.concat(code, "\n\n")
+    return table.concat(code, "\n") .. "\n" .. signatureCode
 end
 
 local inputFilePath, outputFilePath = arg[1], arg[2]
