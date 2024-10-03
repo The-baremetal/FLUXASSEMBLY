@@ -75,11 +75,9 @@ class LuaASMParser:
             raise SyntaxError(f"Invalid architecture definition: {line}")
 
     def _parse_inline_asm(self, line):
-
         if line.startswith("asm(") and line.endswith(")"):
-            print("LOAD")
-            asm_code = line[4:-1].strip()  
-            self.inline_asm.append(asm_code)  
+            asm_code = line[4:-1].strip()
+            self.inline_asm.append(asm_code)
         else:
             raise SyntaxError(f"Invalid inline assembly format: {line}")
 
@@ -119,14 +117,7 @@ class LuaASMParser:
     def generate_code(self):
         output = []
         if self.architecture:
-            if self.architecture.lower() == 'x86':
-                bits = "BITS 32"
-            elif self.architecture.lower() == 'x64':
-                bits = "BITS 64"
-            elif self.architecture.lower() == 'x16':
-                bits = "BITS 16"
-            else:
-                bits = "BITS 32"
+            bits = self._determine_bits()
 
             output.append(bits)
 
@@ -134,25 +125,26 @@ class LuaASMParser:
             output.append(f"ORG {self.directives['start']}")
 
         output.append("_start:")
-
-        output.append("  push 2")   
-        output.append("  push 3")   
-        output.append("  push 5")   
-        output.append("  call add")  
-        output.append("  add esp, 12") 
+        output.append("  push dword 0")  
+        output.append("  call main")  
+        output.append("  add esp, 4")  
 
         for line in self.code_outside_functions:
-            output.append(f"  {line}")  
+            output.append(f"  {line}")
 
         for func in self.functions.values():
             output.append(f"{func['name']}:")
-            output.append("  mov eax, [esp + 4]")   
-            output.append("  add eax, [esp + 8]")   
-            output.append("  add eax, [esp + 12]")  
-            output.append("  ret")                   
+            output.append("  push ebp")  
+            output.append("  mov ebp, esp")  
+            output.append("  sub esp, 16")  
+            for code_line in func["body"]:
+                output.append(f"  {code_line}")  
+            output.append("  mov esp, ebp")  
+            output.append("  pop ebp")  
+            output.append("  ret")  
 
         for asm in self.inline_asm:
-            output.append(self._parse_inline_asm(asm))  
+            output.append(asm)
 
         if self.directives["pad"]:
             padding_value = self.directives["pad"]
@@ -162,6 +154,16 @@ class LuaASMParser:
             output.append(f"  dw {self.directives['sign']}  ; Signature")
 
         return "\n".join(output)
+
+    def _determine_bits(self):
+        if self.architecture.lower() == 'x86':
+            return "BITS 32"
+        elif self.architecture.lower() == 'x64':
+            return "BITS 64"
+        elif self.architecture.lower() == 'x16':
+            return "BITS 16"
+        else:
+            return "BITS 32"
 
 def main(input_file, output_path):
     with open(input_file, 'r') as f:
